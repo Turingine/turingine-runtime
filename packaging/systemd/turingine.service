@@ -1,0 +1,22 @@
+[Unit]
+Description=Turingine Display Bridge
+# Démarrer après l'initialisation du clavier, de l'écran et des autres services systèmes
+After=systemd-user-sessions.service multi-user.target rc-local.service
+
+[Service]
+Type=simple
+# On doit lancer en Root pour avoir la permission d'ouvrir /dev/dri/card0 et /dev/input/!
+User=root
+# On se place dans le dossier de la plateforme pour accéder aux assets/config.
+WorkingDirectory=/home/claw/screen
+ExecStart=/bin/bash /home/claw/screen/scripts/screen.sh
+
+# En cas de crash (par ex. si tu debranches l'HDMI ou un bug passager), le script redémarre auto!
+Restart=always
+RestartSec=3
+
+# Définition de l'environnement Home pour que Firefox Root soit content
+Environment=HOME=/root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc" xmlns:xi="http://www.w3.org/2001/XInclude">
+  <keyboard>
+    <keybind key="A-F4">
+      <action name="Close"/>
+    </keybind>
+    <keybind key="F12">
+      <action name="Close"/>
+    </keybind>
+  </keyboard>
+  <applications>
+    <!-- Forcer le Fullscreen Kiosk pour TOUTES LES APPS -->
+    <application class="*">
+      <decor>no</decor>
+      <maximized>true</maximized>
+      <layer>normal</layer>
+    </application>
+  </applications>
+</openbox_config>

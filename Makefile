@@ -1,0 +1,56 @@
+# Makefile pour la plateforme Turingine
+CFLAGS += -O2 -Wall -Wextra -Icore/display -Icore/input -Icore/common -I/usr/include/libdrm
+LDFLAGS += -ldrm
+
+EVDEV_CFLAGS := $(shell pkg-config --cflags libevdev 2>/dev/null)
+EVDEV_LIBS   := $(shell pkg-config --libs libevdev 2>/dev/null || echo "-levdev")
+
+CFLAGS += $(EVDEV_CFLAGS)
+
+OUT_DIR := .out
+OBJ_DIR := $(OUT_DIR)/build
+BIN_DIR := $(OUT_DIR)/bin
+
+# ── Core Library (Turingine Engine) ──
+LIB_SRC := core/display/drm_display.c core/input/evdev_input.c
+LIB_OBJ := $(OBJ_DIR)/display/drm_display.o $(OBJ_DIR)/input/evdev_input.o
+LIB_ARCHIVE := $(OUT_DIR)/libturingine.a
+
+# ── Applications ──
+APPS := homescreen x11_bridge terminal
+APP_BINS := $(patsubst %,$(BIN_DIR)/%,$(APPS))
+
+all: $(LIB_ARCHIVE) $(APP_BINS)
+
+# Construction de la librairie statique
+$(LIB_ARCHIVE): $(LIB_OBJ) | $(OUT_DIR)
+	ar rcs $@ $^
+
+$(OUT_DIR):
+	mkdir -p $@
+
+# Compilation des objets de la librairie
+$(OBJ_DIR)/display/%.o: core/display/%.c | $(OBJ_DIR)/display
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/input/%.o: core/input/%.c | $(OBJ_DIR)/input
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Construction des applications
+$(BIN_DIR)/homescreen: apps/homescreen/main.c $(LIB_ARCHIVE) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(EVDEV_LIBS)
+
+$(BIN_DIR)/x11_bridge: apps/x11_bridge/main.c $(LIB_ARCHIVE) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lXext -lXtst $(EVDEV_LIBS)
+
+$(BIN_DIR)/terminal: apps/terminal/main.c $(LIB_ARCHIVE) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(EVDEV_LIBS)
+
+# Création des dossiers
+$(OBJ_DIR)/display $(OBJ_DIR)/input $(BIN_DIR):
+	mkdir -p $@
+
+clean:
+	rm -rf $(OUT_DIR)
+
+.PHONY: all clean

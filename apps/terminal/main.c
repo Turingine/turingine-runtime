@@ -10,6 +10,13 @@
 #include "evdev_input.h"
 #include "font8x16.h"
 
+/* ══════════════════════════════════════════════════════════════
+ * Configuration du terminal
+ * ══════════════════════════════════════════════════════════════ */
+
+#define COLS 60  /* Nombre de colonnes (caractères par ligne) */
+#define ROWS 20  /* Nombre de lignes visibles                */
+
 static volatile int keep_running = 1;
 
 static void handle_sigint(int sig) {
@@ -92,8 +99,6 @@ static void prompt_refresh(void) {
            user_name, display_path, sym);
 }
 
-#define COLS 60
-#define ROWS 20
 
 static char term_text[ROWS][COLS];
 static int cursor_x = 0;
@@ -264,8 +269,11 @@ static void run_command(const char *cmd) {
   pclose(f);
 }
 
-// Map qwerty simplifiée
-static const char keymap[128] = {
+/* ══════════════════════════════════════════════════════════════
+ * Keymaps (QWERTY + AZERTY)
+ * ══════════════════════════════════════════════════════════════ */
+
+static const char keymap_qwerty[128] = {
     [KEY_1] = '1', [KEY_2] = '2', [KEY_3] = '3', [KEY_4] = '4', [KEY_5] = '5',
     [KEY_6] = '6', [KEY_7] = '7', [KEY_8] = '8', [KEY_9] = '9', [KEY_0] = '0',
     [KEY_MINUS] = '-', [KEY_EQUAL] = '=',
@@ -275,7 +283,7 @@ static const char keymap[128] = {
     [KEY_SPACE] = ' '
 };
 
-static const char keymap_shift[128] = {
+static const char keymap_qwerty_shift[128] = {
     [KEY_1] = '!', [KEY_2] = '@', [KEY_3] = '#', [KEY_4] = '$', [KEY_5] = '%',
     [KEY_6] = '^', [KEY_7] = '&', [KEY_8] = '*', [KEY_9] = '(', [KEY_0] = ')',
     [KEY_MINUS] = '_', [KEY_EQUAL] = '+',
@@ -284,6 +292,52 @@ static const char keymap_shift[128] = {
     [KEY_Z] = 'Z', [KEY_X] = 'X', [KEY_C] = 'C', [KEY_V] = 'V', [KEY_B] = 'B', [KEY_N] = 'N', [KEY_M] = 'M', [KEY_COMMA] = '<', [KEY_DOT] = '>', [KEY_SLASH] = '?',
     [KEY_SPACE] = ' '
 };
+
+/* AZERTY français — les caractères non-ASCII (é, è, ç, à, ù) donnent 0 */
+static const char keymap_azerty[128] = {
+    [KEY_1] = '&', [KEY_3] = '"', [KEY_4] = '\'', [KEY_5] = '(',
+    [KEY_6] = '-', [KEY_8] = '_',
+    [KEY_MINUS] = ')', [KEY_EQUAL] = '=',
+    [KEY_Q] = 'a', [KEY_W] = 'z', [KEY_E] = 'e', [KEY_R] = 'r', [KEY_T] = 't', [KEY_Y] = 'y', [KEY_U] = 'u', [KEY_I] = 'i', [KEY_O] = 'o', [KEY_P] = 'p',
+    [KEY_A] = 'q', [KEY_S] = 's', [KEY_D] = 'd', [KEY_F] = 'f', [KEY_G] = 'g', [KEY_H] = 'h', [KEY_J] = 'j', [KEY_K] = 'k', [KEY_L] = 'l', [KEY_SEMICOLON] = 'm',
+    [KEY_Z] = 'w', [KEY_X] = 'x', [KEY_C] = 'c', [KEY_V] = 'v', [KEY_B] = 'b', [KEY_N] = 'n',
+    [KEY_M] = ',', [KEY_COMMA] = ';', [KEY_DOT] = ':', [KEY_SLASH] = '!', [KEY_BACKSLASH] = '*',
+    [KEY_SPACE] = ' '
+};
+
+static const char keymap_azerty_shift[128] = {
+    [KEY_1] = '1', [KEY_2] = '2', [KEY_3] = '3', [KEY_4] = '4', [KEY_5] = '5',
+    [KEY_6] = '6', [KEY_7] = '7', [KEY_8] = '8', [KEY_9] = '9', [KEY_0] = '0',
+    [KEY_EQUAL] = '+',
+    [KEY_Q] = 'A', [KEY_W] = 'Z', [KEY_E] = 'E', [KEY_R] = 'R', [KEY_T] = 'T', [KEY_Y] = 'Y', [KEY_U] = 'U', [KEY_I] = 'I', [KEY_O] = 'O', [KEY_P] = 'P',
+    [KEY_A] = 'Q', [KEY_S] = 'S', [KEY_D] = 'D', [KEY_F] = 'F', [KEY_G] = 'G', [KEY_H] = 'H', [KEY_J] = 'J', [KEY_K] = 'K', [KEY_L] = 'L', [KEY_SEMICOLON] = 'M', [KEY_APOSTROPHE] = '%',
+    [KEY_Z] = 'W', [KEY_X] = 'X', [KEY_C] = 'C', [KEY_V] = 'V', [KEY_B] = 'B', [KEY_N] = 'N',
+    [KEY_M] = '?', [KEY_COMMA] = '.', [KEY_DOT] = '/', [KEY_BACKSLASH] = '|',
+    [KEY_SPACE] = ' '
+};
+
+/* Pointeurs vers la keymap active (QWERTY par défaut) */
+static const char *active_keymap       = keymap_qwerty;
+static const char *active_keymap_shift  = keymap_qwerty_shift;
+
+/* Détecte le layout clavier depuis /etc/default/keyboard (Debian/Armbian) */
+static void detect_keyboard_layout(void) {
+  FILE *f = fopen("/etc/default/keyboard", "r");
+  if (!f)
+    return;
+
+  char line[256];
+  while (fgets(line, sizeof(line), f)) {
+    /* Chercher XKBLAYOUT="fr" ou variantes */
+    if (strstr(line, "XKBLAYOUT") && strstr(line, "fr")) {
+      active_keymap = keymap_azerty;
+      active_keymap_shift = keymap_azerty_shift;
+      printf("Clavier AZERTY (fr) détecté\n");
+      break;
+    }
+  }
+  fclose(f);
+}
 
 int main(void) {
   signal(SIGINT, handle_sigint);
@@ -305,6 +359,7 @@ int main(void) {
 
   memset(term_text, 0, sizeof(term_text));
   detect_default_user();
+  detect_keyboard_layout();
 
   term_print("==================================\n");
   term_print(" Turingine Native Shell\n");
@@ -359,7 +414,7 @@ int main(void) {
               term_putc('\b');
             }
           } else if (ev.code < 128) {
-            char c = shift_held ? keymap_shift[ev.code] : keymap[ev.code];
+            char c = shift_held ? active_keymap_shift[ev.code] : active_keymap[ev.code];
             if (c != 0 && input_pos < (int)sizeof(input_cmd) - 1) {
               input_cmd[input_pos] = c;
               input_pos += 1;

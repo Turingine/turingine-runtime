@@ -28,35 +28,49 @@ static char prompt_str[128] = "root@turingine:~# ";
 
 static void detect_default_user(void) {
   FILE *f = fopen("/etc/passwd", "r");
-  if (!f)
+  if (!f) {
+    printf("detect_default_user: impossible d'ouvrir /etc/passwd\n");
     return;
+  }
 
   char line[512];
   while (fgets(line, sizeof(line), f)) {
-    char copy[512];
-    strncpy(copy, line, sizeof(copy) - 1);
-    copy[sizeof(copy) - 1] = '\0';
+    /* Découpage manuel par ':' (strtok fusionne les champs vides) */
+    char *fields[7] = {0};
+    char *cur = line;
+    for (int i = 0; i < 7 && cur; i += 1) {
+      fields[i] = cur;
+      char *sep = strchr(cur, ':');
+      if (sep) {
+        *sep = '\0';
+        cur = sep + 1;
+      } else {
+        /* Dernier champ : retirer le \n */
+        char *nl = strchr(cur, '\n');
+        if (nl) *nl = '\0';
+        cur = NULL;
+      }
+    }
 
-    char *name = strtok(copy, ":");
-    strtok(NULL, ":"); /* mot de passe */
-    char *uid_str = strtok(NULL, ":");
-    strtok(NULL, ":"); /* gid */
-    strtok(NULL, ":"); /* gecos */
-    char *home = strtok(NULL, ":");
-
-    if (!name || !uid_str || !home)
+    /* fields: 0=name 1=pass 2=uid 3=gid 4=gecos 5=home 6=shell */
+    if (!fields[0] || !fields[2] || !fields[5])
       continue;
 
-    int uid = atoi(uid_str);
+    int uid = atoi(fields[2]);
     if (uid >= 1000 && uid < 65534) {
-      strncpy(user_name, name, sizeof(user_name) - 1);
-      strncpy(user_home, home, sizeof(user_home) - 1);
-      strncpy(user_cwd, home, sizeof(user_cwd) - 1);
+      strncpy(user_name, fields[0], sizeof(user_name) - 1);
+      strncpy(user_home, fields[5], sizeof(user_home) - 1);
+      strncpy(user_cwd, fields[5], sizeof(user_cwd) - 1);
       snprintf(prompt_str, sizeof(prompt_str), "%s@turingine:~$ ", user_name);
+      printf("Utilisateur détecté : %s (home: %s)\n", user_name, user_home);
       break;
     }
   }
   fclose(f);
+
+  /* Déplacer le processus dans le répertoire de l'utilisateur */
+  if (chdir(user_home) != 0)
+    printf("Attention: impossible de chdir vers %s\n", user_home);
 }
 
 /* Reconstruit le prompt après un changement de répertoire */

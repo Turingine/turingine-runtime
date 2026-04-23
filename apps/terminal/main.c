@@ -17,6 +17,67 @@ static void handle_sigint(int sig) {
   keep_running = 0;
 }
 
+/* ══════════════════════════════════════════════════════════════
+ * Détection du premier utilisateur non-root (UID >= 1000)
+ * ══════════════════════════════════════════════════════════════ */
+
+static char user_name[64] = "root";
+static char user_home[128] = "/root";
+static char user_cwd[256] = "/root";
+static char prompt_str[128] = "root@turingine:~# ";
+
+static void detect_default_user(void) {
+  FILE *f = fopen("/etc/passwd", "r");
+  if (!f)
+    return;
+
+  char line[512];
+  while (fgets(line, sizeof(line), f)) {
+    char copy[512];
+    strncpy(copy, line, sizeof(copy) - 1);
+    copy[sizeof(copy) - 1] = '\0';
+
+    char *name = strtok(copy, ":");
+    strtok(NULL, ":"); /* mot de passe */
+    char *uid_str = strtok(NULL, ":");
+    strtok(NULL, ":"); /* gid */
+    strtok(NULL, ":"); /* gecos */
+    char *home = strtok(NULL, ":");
+
+    if (!name || !uid_str || !home)
+      continue;
+
+    int uid = atoi(uid_str);
+    if (uid >= 1000 && uid < 65534) {
+      strncpy(user_name, name, sizeof(user_name) - 1);
+      strncpy(user_home, home, sizeof(user_home) - 1);
+      strncpy(user_cwd, home, sizeof(user_cwd) - 1);
+      snprintf(prompt_str, sizeof(prompt_str), "%s@turingine:~$ ", user_name);
+      break;
+    }
+  }
+  fclose(f);
+}
+
+/* Reconstruit le prompt après un changement de répertoire */
+static void prompt_refresh(void) {
+  int home_len = strlen(user_home);
+  const char *display_path = user_cwd;
+  static char short_path[256];
+
+  if (strcmp(user_cwd, user_home) == 0) {
+    display_path = "~";
+  } else if (strncmp(user_cwd, user_home, home_len) == 0 &&
+             user_cwd[home_len] == '/') {
+    snprintf(short_path, sizeof(short_path), "~%s", user_cwd + home_len);
+    display_path = short_path;
+  }
+
+  const char *sym = (strcmp(user_name, "root") == 0) ? "#" : "$";
+  snprintf(prompt_str, sizeof(prompt_str), "%s@turingine:%s%s ",
+           user_name, display_path, sym);
+}
+
 #define COLS 60
 #define ROWS 20
 
@@ -122,9 +183,60 @@ static void render_term(void) {
   drm_display_present(&drm);
 }
 
+/* Gestion de la commande cd (changement de répertoire) */
+static void handle_cd(const char *arg) {
+  /* cd sans argument ou cd ~ → retour au home */
+  if (arg[0] == '\0' || strcmp(arg, "~") == 0) {
+    strncpy(user_cwd, user_home, sizeof(user_cwd) - 1);
+    prompt_refresh();
+    return;
+  }
+
+  /* Résoudre le chemin via le shell */
+  char full_cmd[512];
+  if (strcmp(user_name, "root") == 0) {
+    snprintf(full_cmd, sizeof(full_cmd),
+             "cd %s && cd %s && pwd 2>&1", user_cwd, arg);
+  } else {
+    snprintf(full_cmd, sizeof(full_cmd),
+             "su -l %s -c 'cd %s && cd %s && pwd' 2>&1",
+             user_name, user_cwd, arg);
+  }
+
+  FILE *f = popen(full_cmd, "r");
+  if (!f) {
+    term_print("cd: erreur interne\n");
+    return;
+  }
+
+  char result[256] = {0};
+  if (fgets(result, sizeof(result), f)) {
+    int len = strlen(result);
+    if (len > 0 && result[len - 1] == '\n')
+      result[len - 1] = '\0';
+
+    if (result[0] == '/') {
+      strncpy(user_cwd, result, sizeof(user_cwd) - 1);
+      prompt_refresh();
+    } else {
+      /* Le shell a renvoyé une erreur */
+      term_print(result);
+      term_print("\n");
+    }
+  }
+  pclose(f);
+}
+
 static void run_command(const char *cmd) {
-  char full_cmd[256];
-  snprintf(full_cmd, sizeof(full_cmd), "%s 2>&1", cmd);
+  char full_cmd[512];
+  if (strcmp(user_name, "root") == 0) {
+    snprintf(full_cmd, sizeof(full_cmd),
+             "cd %s && %s 2>&1", user_cwd, cmd);
+  } else {
+    snprintf(full_cmd, sizeof(full_cmd),
+             "su -l %s -c 'cd %s && %s' 2>&1",
+             user_name, user_cwd, cmd);
+  }
   FILE *f = popen(full_cmd, "r");
   if (!f) {
     term_print("Erreur: impossible d'exécuter la commande\n");
@@ -133,7 +245,7 @@ static void run_command(const char *cmd) {
   char buf[128];
   while (fgets(buf, sizeof(buf), f)) {
     term_print(buf);
-    render_term(); // Rendu progressif pendant que la commande tourne
+    render_term(); /* Rendu progressif pendant que la commande tourne */
   }
   pclose(f);
 }
@@ -178,11 +290,12 @@ int main(void) {
   }
 
   memset(term_text, 0, sizeof(term_text));
+  detect_default_user();
 
   term_print("==================================\n");
-  term_print(" Turingine Native Shell (Root)\n");
+  term_print(" Turingine Native Shell\n");
   term_print("==================================\n\n");
-  term_print("root@turingine:~# ");
+  term_print(prompt_str);
 
   char input_cmd[128] = {0};
   int input_pos = 0;
@@ -214,6 +327,9 @@ int main(void) {
             if (input_pos > 0) {
               if (strcmp(input_cmd, "exit") == 0) {
                 keep_running = 0;
+              } else if (strncmp(input_cmd, "cd", 2) == 0 &&
+                         (input_cmd[2] == ' ' || input_cmd[2] == '\0')) {
+                handle_cd(input_cmd[2] == ' ' ? input_cmd + 3 : "");
               } else {
                 run_command(input_cmd);
               }
@@ -221,7 +337,7 @@ int main(void) {
             input_pos = 0;
             input_cmd[0] = '\0';
             if (keep_running)
-              term_print("root@turingine:~# ");
+              term_print(prompt_str);
           } else if (ev.code == KEY_BACKSPACE) {
             if (input_pos > 0) {
               input_pos -= 1;

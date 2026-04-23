@@ -22,10 +22,6 @@
  * Certains GPU exigent des dimensions alignées sur 16 pixels. */
 #define ALIGN(v, a) (((v) + (a)-1) & ~((a)-1))
 
-/* État interne du Dumb Buffer alloué par le noyau */
-static struct drm_mode_create_dumb g_creq;
-static drmModeModeInfo g_mode;
-
 /* ─────────────────────────────────────────────────────────────
  * Nettoyage des ressources DRM (ordre inverse de l'allocation)
  * ───────────────────────────────────────────────────────────── */
@@ -35,15 +31,15 @@ static void drm_display_cleanup(struct drm_display *d) {
 
   /* 1. Détacher la zone mémoire mappée */
   if (d->map && d->map != MAP_FAILED)
-    munmap(d->map, g_creq.size);
+    munmap(d->map, d->buf_size);
 
   /* 2. Supprimer le Framebuffer enregistré */
   if (d->fb_id)
     drmModeRmFB(d->fd, d->fb_id);
 
   /* 3. Détruire le Dumb Buffer alloué en VRAM */
-  if (g_creq.handle) {
-    struct drm_mode_destroy_dumb dreq = {.handle = g_creq.handle};
+  if (d->buf_handle) {
+    struct drm_mode_destroy_dumb dreq = {.handle = d->buf_handle};
     ioctl(d->fd, DRM_IOCTL_MODE_DESTROY_DUMB, &dreq);
   }
 
@@ -64,7 +60,8 @@ static void drm_display_cleanup(struct drm_display *d) {
  * ───────────────────────────────────────────────────────────── */
 static int find_connector_and_mode(int fd, drmModeRes *res,
                                    uint32_t *out_conn_id,
-                                   uint32_t *out_crtc_id) {
+                                   uint32_t *out_crtc_id,
+                                   drmModeModeInfo *out_mode) {
   for (int i = 0; i < res->count_connectors; i++) {
     drmModeConnector *conn = drmModeGetConnector(fd, res->connectors[i]);
     if (!conn)
@@ -77,7 +74,7 @@ static int find_connector_and_mode(int fd, drmModeRes *res,
     }
 
     *out_conn_id = conn->connector_id;
-    g_mode = conn->modes[0]; /* Premier mode = résolution native préférée */
+    *out_mode = conn->modes[0]; /* Premier mode = résolution native préférée */
 
     /* Stratégie 1 : l'encodeur actif a déjà un CRTC assigné */
     if (conn->encoder_id) {
@@ -162,7 +159,8 @@ int drm_display_init(struct drm_display *d, uint32_t *out_w, uint32_t *out_h,
       continue;
     }
 
-    if (find_connector_and_mode(d->fd, res, &d->conn_id, &d->crtc_id) < 0)
+    if (find_connector_and_mode(d->fd, res, &d->conn_id, &d->crtc_id,
+                                &d->mode) < 0)
       continue;
 
     found = 1;
@@ -176,20 +174,21 @@ int drm_display_init(struct drm_display *d, uint32_t *out_w, uint32_t *out_h,
   }
 
   /* ── Allocation du Dumb Buffer ── */
-  uint32_t w = g_mode.hdisplay;
-  uint32_t h = g_mode.vdisplay;
+  uint32_t w = d->mode.hdisplay;
+  uint32_t h = d->mode.vdisplay;
 
-  memset(&g_creq, 0, sizeof(g_creq));
-  g_creq.width = w;
-  g_creq.height = h;
-  g_creq.bpp = 32; /* ARGB8888 = 4 octets par pixel */
+  struct drm_mode_create_dumb creq;
+  memset(&creq, 0, sizeof(creq));
+  creq.width = w;
+  creq.height = h;
+  creq.bpp = 32; /* ARGB8888 = 4 octets par pixel */
 
   /* Certains GPU ARM refusent les dimensions non alignées */
-  if (ioctl(d->fd, DRM_IOCTL_MODE_CREATE_DUMB, &g_creq) < 0) {
-    g_creq.width = ALIGN(w, 16);
-    g_creq.height = ALIGN(h, 16);
-    g_creq.bpp = 32;
-    if (ioctl(d->fd, DRM_IOCTL_MODE_CREATE_DUMB, &g_creq) < 0) {
+  if (ioctl(d->fd, DRM_IOCTL_MODE_CREATE_DUMB, &creq) < 0) {
+    creq.width = ALIGN(w, 16);
+    creq.height = ALIGN(h, 16);
+    creq.bpp = 32;
+    if (ioctl(d->fd, DRM_IOCTL_MODE_CREATE_DUMB, &creq) < 0) {
       fprintf(stderr, "DRM_IOCTL_MODE_CREATE_DUMB: %s\n", strerror(errno));
       drmModeFreeResources(res);
       drm_display_cleanup(d);
@@ -197,17 +196,21 @@ int drm_display_init(struct drm_display *d, uint32_t *out_w, uint32_t *out_h,
     }
   }
 
+  /* Sauvegarder les données nécessaires au nettoyage */
+  d->buf_handle = creq.handle;
+  d->buf_size = creq.size;
+
   d->width = w;
   d->height = h;
-  d->pitch = g_creq.pitch;
+  d->pitch = creq.pitch;
   d->format = DRM_FORMAT_XRGB8888;
 
   /* ── Enregistrement du Framebuffer ── */
-  uint32_t handles[4] = {g_creq.handle, 0, 0, 0};
-  uint32_t strides[4] = {g_creq.pitch, 0, 0, 0};
+  uint32_t handles[4] = {creq.handle, 0, 0, 0};
+  uint32_t strides[4] = {creq.pitch, 0, 0, 0};
   uint32_t offsets[4] = {0};
 
-  if (drmModeAddFB2(d->fd, g_creq.width, g_creq.height, d->format, handles,
+  if (drmModeAddFB2(d->fd, creq.width, creq.height, d->format, handles,
                     strides, offsets, &d->fb_id, 0) < 0) {
     perror("drmModeAddFB2");
     drmModeFreeResources(res);
@@ -216,7 +219,7 @@ int drm_display_init(struct drm_display *d, uint32_t *out_w, uint32_t *out_h,
   }
 
   /* ── Mapping mémoire (mmap) du buffer dans notre processus ── */
-  struct drm_mode_map_dumb mreq = {.handle = g_creq.handle};
+  struct drm_mode_map_dumb mreq = {.handle = creq.handle};
   if (ioctl(d->fd, DRM_IOCTL_MODE_MAP_DUMB, &mreq) < 0) {
     perror("DRM_IOCTL_MODE_MAP_DUMB");
     drmModeFreeResources(res);
@@ -224,7 +227,7 @@ int drm_display_init(struct drm_display *d, uint32_t *out_w, uint32_t *out_h,
     return -1;
   }
 
-  d->map = mmap(0, g_creq.size, PROT_READ | PROT_WRITE, MAP_SHARED, d->fd,
+  d->map = mmap(0, creq.size, PROT_READ | PROT_WRITE, MAP_SHARED, d->fd,
                 mreq.offset);
   if (d->map == MAP_FAILED) {
     perror("mmap");
@@ -285,7 +288,7 @@ int drm_display_present(struct drm_display *d) {
     return -1;
 
   if (drmModeSetCrtc(d->fd, d->crtc_id, d->fb_id, 0, 0, &d->conn_id, 1,
-                     &g_mode) < 0) {
+                     &d->mode) < 0) {
     perror("drmModeSetCrtc");
     return -1;
   }

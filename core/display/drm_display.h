@@ -19,6 +19,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <xf86drmMode.h>
 
 struct drm_display {
     int fd;
@@ -31,6 +32,11 @@ struct drm_display {
     uint32_t height;
     uint32_t pitch;   /* en octets */
     uint32_t format;  /* DRM_FORMAT_* */
+
+    /* État interne du buffer alloué (utilisé par cleanup) */
+    uint32_t buf_handle;
+    uint64_t buf_size;
+    drmModeModeInfo mode;
 };
 
 /* Initialise l'affichage, crée un buffer et le mappe.

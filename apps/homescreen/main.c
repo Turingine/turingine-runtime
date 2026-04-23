@@ -103,6 +103,18 @@ static void load_config(const char *filename) {
  * Rendu logiciel : dessin de primitives dans le framebuffer
  * ══════════════════════════════════════════════════════════════ */
 
+/* Éclaircit une couleur ARGB sans overflow entre canaux */
+static uint32_t lighten_color(uint32_t color, uint32_t amount) {
+  uint32_t a = (color >> 24) & 0xFF;
+  uint32_t r = (color >> 16) & 0xFF;
+  uint32_t g = (color >>  8) & 0xFF;
+  uint32_t b =  color        & 0xFF;
+  r = (r + amount > 255) ? 255 : r + amount;
+  g = (g + amount > 255) ? 255 : g + amount;
+  b = (b + amount > 255) ? 255 : b + amount;
+  return (a << 24) | (r << 16) | (g << 8) | b;
+}
+
 static void fill_rect(uint32_t *fb, uint32_t stride, uint32_t scr_w,
                       uint32_t scr_h, int x, int y, int w, int h,
                       uint32_t color) {
@@ -333,7 +345,7 @@ int main(void) {
       /* Couleur de fond (hover si la souris est dessus) */
       int hovered = (mouse_x >= bx && mouse_x < bx + BTN_WIDTH &&
                      mouse_y >= by && mouse_y < by + BTN_HEIGHT);
-      uint32_t bg = hovered ? (buttons[i].color + 0x222222) : buttons[i].color;
+      uint32_t bg = hovered ? lighten_color(buttons[i].color, 0x22) : buttons[i].color;
 
       fill_rect(fb, stride, scr_w, scr_h, bx, by, BTN_WIDTH, BTN_HEIGHT, bg);
       draw_rect(fb, stride, scr_w, scr_h, bx, by, BTN_WIDTH, BTN_HEIGHT,
@@ -373,10 +385,11 @@ int main(void) {
 
       /* Souris */
       while (in_devs.mouse) {
-      rc = libevdev_next_event(in_devs.mouse, LIBEVDEV_READ_FLAG_NORMAL, &ev);
-      if (rc == LIBEVDEV_READ_STATUS_SYNC) {
-        while (rc == LIBEVDEV_READ_STATUS_SYNC)
-          rc = libevdev_next_event(in_devs.mouse, LIBEVDEV_READ_FLAG_SYNC, &ev);
+        rc = libevdev_next_event(in_devs.mouse, LIBEVDEV_READ_FLAG_NORMAL, &ev);
+        if (rc == LIBEVDEV_READ_STATUS_SYNC) {
+          while (rc == LIBEVDEV_READ_STATUS_SYNC) {
+            rc = libevdev_next_event(in_devs.mouse, LIBEVDEV_READ_FLAG_SYNC, &ev);
+          }
           continue;
         }
         if (rc != LIBEVDEV_READ_STATUS_SUCCESS)
@@ -398,10 +411,11 @@ int main(void) {
 
       /* Clavier */
       while (in_devs.kb) {
-      rc = libevdev_next_event(in_devs.kb, LIBEVDEV_READ_FLAG_NORMAL, &ev);
-      if (rc == LIBEVDEV_READ_STATUS_SYNC) {
-        while (rc == LIBEVDEV_READ_STATUS_SYNC)
-          rc = libevdev_next_event(in_devs.kb, LIBEVDEV_READ_FLAG_SYNC, &ev);
+        rc = libevdev_next_event(in_devs.kb, LIBEVDEV_READ_FLAG_NORMAL, &ev);
+        if (rc == LIBEVDEV_READ_STATUS_SYNC) {
+          while (rc == LIBEVDEV_READ_STATUS_SYNC) {
+            rc = libevdev_next_event(in_devs.kb, LIBEVDEV_READ_FLAG_SYNC, &ev);
+          }
           continue;
         }
         if (rc != LIBEVDEV_READ_STATUS_SUCCESS)

@@ -53,4 +53,5 @@ $(OBJ_DIR)/display $(OBJ_DIR)/input $(BIN_DIR):
 clean:
 	rm -rf $(OUT_DIR)
 
+.SUFFIXES:
 .PHONY: all clean

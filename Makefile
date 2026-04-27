@@ -43,8 +43,12 @@ $(BIN_DIR)/homescreen: apps/homescreen/main.c $(LIB_ARCHIVE) | $(BIN_DIR)
 $(BIN_DIR)/x11_bridge: apps/x11_bridge/main.c $(LIB_ARCHIVE) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lXext -lXtst $(EVDEV_LIBS)
 
-$(BIN_DIR)/terminal: apps/terminal/main.c $(LIB_ARCHIVE) | $(BIN_DIR)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(EVDEV_LIBS)
+TERM_SRC := apps/terminal/main.c apps/terminal/term_render.c \
+           apps/terminal/term_history.c apps/terminal/term_complete.c \
+           apps/terminal/term_shell.c
+
+$(BIN_DIR)/terminal: $(TERM_SRC) $(LIB_ARCHIVE) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -Iapps/terminal -o $@ $(TERM_SRC) $(LIB_ARCHIVE) $(LDFLAGS) $(EVDEV_LIBS)
 
 # Création des dossiers
 $(OBJ_DIR)/display $(OBJ_DIR)/input $(BIN_DIR):

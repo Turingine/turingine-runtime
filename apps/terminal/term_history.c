@@ -40,13 +40,10 @@ void history_load(void) {
   }
   fclose(f);
 
-  /* Si on a lu plus que HISTORY_MAX, recaler pour que l'index 0
-   * soit la plus ancienne entrée conservée */
-  if (hist_count > HISTORY_MAX) hist_count = HISTORY_MAX;
-
   hist_cursor = hist_count; /* Curseur après la dernière entrée */
+  int loaded = hist_count > HISTORY_MAX ? HISTORY_MAX : hist_count;
   printf("Historique: %d entrées chargées depuis %s\n",
-         hist_count, hist_file_path);
+         loaded, hist_file_path);
 }
 
 void history_append(const char *cmd) {
@@ -60,7 +57,6 @@ void history_append(const char *cmd) {
   snprintf(history[hist_count % HISTORY_MAX],
            sizeof(history[0]), "%s", cmd);
   hist_count += 1;
-  if (hist_count > HISTORY_MAX) hist_count = HISTORY_MAX;
 
   hist_cursor = hist_count;
   hist_browsing = 0;
@@ -115,8 +111,9 @@ void history_navigate(int direction, char *input_cmd, int *input_pos) {
     hist_browsing = 1;
   }
 
+  int oldest = (hist_count > HISTORY_MAX) ? hist_count - HISTORY_MAX : 0;
   int new_cursor = hist_cursor + direction;
-  if (new_cursor < 0) new_cursor = 0;
+  if (new_cursor < oldest) new_cursor = oldest;
   if (new_cursor > hist_count) new_cursor = hist_count;
   if (new_cursor == hist_cursor) return;
   hist_cursor = new_cursor;

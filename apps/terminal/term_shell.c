@@ -17,7 +17,7 @@
 char user_name[64] = "root";
 char user_home[128] = "/root";
 char user_cwd[256] = "/root";
-char prompt_str[128] = "root@turingine:~# ";
+char prompt_str[256] = "root@turingine:~# ";
 
 /* ══════════════════════════════════════════════════════════════
  * Détection du premier utilisateur non-root (UID >= 1000)
@@ -55,9 +55,9 @@ void detect_default_user(void) {
 
     int uid = atoi(fields[2]);
     if (uid >= 1000 && uid < 65534) {
-      strncpy(user_name, fields[0], sizeof(user_name) - 1);
-      strncpy(user_home, fields[5], sizeof(user_home) - 1);
-      strncpy(user_cwd, fields[5], sizeof(user_cwd) - 1);
+      snprintf(user_name, sizeof(user_name), "%s", fields[0]);
+      snprintf(user_home, sizeof(user_home), "%s", fields[5]);
+      snprintf(user_cwd, sizeof(user_cwd), "%s", fields[5]);
       snprintf(prompt_str, sizeof(prompt_str), "%s@turingine:~$ ", user_name);
       printf("Utilisateur détecté : %s (home: %s)\n", user_name, user_home);
       break;
@@ -97,7 +97,7 @@ void prompt_refresh(void) {
 void handle_cd(const char *arg) {
   /* cd sans argument ou cd ~ → retour au home */
   if (arg[0] == '\0' || strcmp(arg, "~") == 0) {
-    strncpy(user_cwd, user_home, sizeof(user_cwd) - 1);
+    snprintf(user_cwd, sizeof(user_cwd), "%s", user_home);
     prompt_refresh();
     return;
   }
@@ -126,7 +126,7 @@ void handle_cd(const char *arg) {
       result[len - 1] = '\0';
 
     if (result[0] == '/') {
-      strncpy(user_cwd, result, sizeof(user_cwd) - 1);
+      snprintf(user_cwd, sizeof(user_cwd), "%s", result);
       prompt_refresh();
     } else {
       /* Le shell a renvoyé une erreur */

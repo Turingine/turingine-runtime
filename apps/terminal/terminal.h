@@ -28,7 +28,7 @@
 extern char user_name[64];
 extern char user_home[128];
 extern char user_cwd[256];
-extern char prompt_str[128];
+extern char prompt_str[256];
 
 /* Pointeurs vers la keymap active (définis dans term_shell.c) */
 extern const char *active_keymap;

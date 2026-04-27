@@ -34,8 +34,8 @@ void history_load(void) {
     if (len > 0 && line[len - 1] == '\n') line[len - 1] = '\0';
     if (line[0] == '\0') continue;
 
-    strncpy(history[hist_count % HISTORY_MAX], line,
-            sizeof(history[0]) - 1);
+    snprintf(history[hist_count % HISTORY_MAX],
+             sizeof(history[0]), "%s", line);
     hist_count += 1;
   }
   fclose(f);
@@ -57,8 +57,8 @@ void history_append(const char *cmd) {
       strcmp(history[(hist_count - 1) % HISTORY_MAX], cmd) == 0)
     return;
 
-  strncpy(history[hist_count % HISTORY_MAX], cmd,
-          sizeof(history[0]) - 1);
+  snprintf(history[hist_count % HISTORY_MAX],
+           sizeof(history[0]), "%s", cmd);
   hist_count += 1;
   if (hist_count > HISTORY_MAX) hist_count = HISTORY_MAX;
 
@@ -111,8 +111,7 @@ void history_navigate(int direction, char *input_cmd, int *input_pos) {
 
   /* Sauvegarder la saisie courante au premier appui */
   if (!hist_browsing) {
-    strncpy(hist_saved_input, input_cmd, sizeof(hist_saved_input) - 1);
-    hist_saved_input[sizeof(hist_saved_input) - 1] = '\0';
+    snprintf(hist_saved_input, sizeof(hist_saved_input), "%s", input_cmd);
     hist_browsing = 1;
   }
 

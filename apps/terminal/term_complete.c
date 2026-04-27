@@ -42,8 +42,8 @@ static void complete_command(const char *prefix) {
           if (strcmp(completions[i], ent->d_name) == 0) { dup = 1; break; }
         }
         if (!dup) {
-          strncpy(completions[complete_count], ent->d_name,
-                  sizeof(completions[0]) - 1);
+          snprintf(completions[complete_count],
+                   sizeof(completions[0]), "%s", ent->d_name);
           complete_count += 1;
         }
       }
@@ -81,7 +81,7 @@ static void complete_path(const char *prefix) {
   /* Résoudre le chemin dans user_cwd */
   char full_dir[512];
   if (dir_path[0] == '/') {
-    strncpy(full_dir, dir_path, sizeof(full_dir) - 1);
+    snprintf(full_dir, sizeof(full_dir), "%s", dir_path);
   } else {
     snprintf(full_dir, sizeof(full_dir), "%s/%s", user_cwd, dir_path);
   }
@@ -94,7 +94,7 @@ static void complete_path(const char *prefix) {
       continue;
     if (plen == 0 || strncmp(ent->d_name, name_prefix, plen) == 0) {
       /* Ajouter un / si c'est un dossier */
-      char entry[INPUT_MAX];
+      char entry[512];
       if (last_slash) {
         char dir_part[256];
         int dlen = (int)(last_slash - prefix) + 1;
@@ -103,11 +103,11 @@ static void complete_path(const char *prefix) {
         dir_part[dlen] = '\0';
         snprintf(entry, sizeof(entry), "%s%s", dir_part, ent->d_name);
       } else {
-        strncpy(entry, ent->d_name, sizeof(entry) - 1);
+        snprintf(entry, sizeof(entry), "%s", ent->d_name);
       }
 
       /* Vérifier si c'est un répertoire */
-      char check_path[512];
+      char check_path[768];
       snprintf(check_path, sizeof(check_path), "%s/%s", full_dir, ent->d_name);
       struct stat st;
       if (stat(check_path, &st) == 0 && S_ISDIR(st.st_mode)) {
@@ -118,8 +118,8 @@ static void complete_path(const char *prefix) {
         }
       }
 
-      strncpy(completions[complete_count], entry,
-              sizeof(completions[0]) - 1);
+      snprintf(completions[complete_count],
+               sizeof(completions[0]), "%s", entry);
       complete_count += 1;
     }
   }

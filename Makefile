@@ -48,7 +48,7 @@ TERM_SRC := apps/terminal/main.c apps/terminal/term_render.c \
            apps/terminal/term_shell.c
 
 $(BIN_DIR)/terminal: $(TERM_SRC) $(LIB_ARCHIVE) | $(BIN_DIR)
-	$(CC) $(CFLAGS) -Iapps/terminal -o $@ $(TERM_SRC) $(LIB_ARCHIVE) $(LDFLAGS) $(EVDEV_LIBS)
+	$(CC) $(CFLAGS) -Iapps/terminal -o $@ $(TERM_SRC) $(LIB_ARCHIVE) $(LDFLAGS) $(EVDEV_LIBS) -lutil
 
 # Création des dossiers
 $(OBJ_DIR)/display $(OBJ_DIR)/input $(BIN_DIR):

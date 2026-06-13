@@ -9,6 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <pty.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <errno.h>
 
 /* ══════════════════════════════════════════════════════════════
  * Variables globales de l'utilisateur et du prompt
@@ -137,27 +141,57 @@ void handle_cd(const char *arg) {
   pclose(f);
 }
 
+/* ══════════════════════════════════════════════════════════════
+ * Exécution via PTY
+ * ══════════════════════════════════════════════════════════════ */
+
+/* fd du master PTY (-1 si aucune commande en cours) */
+int pty_fd = -1;
+pid_t pty_child = -1;
+
+/* Lance cmd dans un PTY. Retourne immédiatement.
+ * pty_fd et pty_child sont mis à jour.
+ * La boucle principale gère les I/O. */
 void run_command(const char *cmd) {
-  char full_cmd[512];
-  if (strcmp(user_name, "root") == 0) {
-    snprintf(full_cmd, sizeof(full_cmd),
-             "cd %s && %s 2>&1", user_cwd, cmd);
-  } else {
-    snprintf(full_cmd, sizeof(full_cmd),
-             "su -l %s -c 'cd %s && %s' 2>&1",
-             user_name, user_cwd, cmd);
-  }
-  FILE *f = popen(full_cmd, "r");
-  if (!f) {
-    term_print("Erreur: impossible d'exécuter la commande\n");
+  struct winsize ws = {
+    .ws_row = ROWS,
+    .ws_col = COLS,
+    .ws_xpixel = 0,
+    .ws_ypixel = 0,
+  };
+
+  pid_t pid = forkpty(&pty_fd, NULL, NULL, &ws);
+  if (pid < 0) {
+    term_print("Erreur: forkpty() a echoue\n");
+    pty_fd = -1;
     return;
   }
-  char buf[128];
-  while (fgets(buf, sizeof(buf), f)) {
-    term_print(buf);
-    render_term(); /* Rendu progressif pendant que la commande tourne */
+
+  if (pid == 0) {
+    /* ── Processus enfant ── */
+    /* Préparer les variables d'environnement */
+    setenv("HOME",    user_home, 1);
+    setenv("USER",    user_name, 1);
+    setenv("LOGNAME", user_name, 1);
+    setenv("TERM",    "xterm",   1);
+
+    /* Se placer dans le bon répertoire */
+    if (chdir(user_cwd) != 0) {
+      /* Silencieux — le shell le signalera lui-même si besoin */
+    }
+
+    /* Exécuter via bash -c */
+    execl("/bin/bash", "bash", "-c", cmd, NULL);
+    /* Si execl échoue */
+    _exit(127);
   }
-  pclose(f);
+
+  /* ── Processus parent ── */
+  pty_child = pid;
+
+  /* Mettre le fd en mode non-bloquant */
+  int flags = fcntl(pty_fd, F_GETFL, 0);
+  fcntl(pty_fd, F_SETFL, flags | O_NONBLOCK);
 }
 
 /* ══════════════════════════════════════════════════════════════
